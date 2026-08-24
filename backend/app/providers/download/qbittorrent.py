@@ -126,17 +126,45 @@ class QBittorrentProvider(DownloadProvider):
             raise DownloadProviderError(f"qBittorrent rejected the download: {result}")
         return str(added_ids[0]) if added_ids else None
 
+    def _adopt_existing(self, known_hash: str | None) -> str | None:
+        """When an add is rejected because the torrent already exists — 4.x
+        returns the string "Fails.", 5.x returns HTTP 409 — reuse the existing
+        torrent if we can identify it by hash, tagging it so the poller tracks
+        it. Returns None when there is nothing to adopt (a genuine failure)."""
+        if not known_hash or not self._client.torrents_info(torrent_hashes=known_hash):
+            return None
+        try:
+            self._client.torrents_add_tags(tags=self._tag, torrent_hashes=known_hash)
+        except qbittorrentapi.APIError:
+            pass
+        return known_hash
+
     async def add(self, source: str, save_path: str) -> str:
         def _add() -> str:
             known_hash = extract_magnet_hash(source)
             before = {t.hash for t in self._client.torrents_info(tag=self._tag)}
-            result = self._client.torrents_add(
-                urls=source,
-                save_path=save_path,
-                tags=self._tag,
-                use_auto_torrent_management=False,
-            )
-            direct_hash = self._hash_from_add_result(result)
+            try:
+                result = self._client.torrents_add(
+                    urls=source,
+                    save_path=save_path,
+                    tags=self._tag,
+                    use_auto_torrent_management=False,
+                )
+            except qbittorrentapi.Conflict409Error as exc:
+                adopted = self._adopt_existing(known_hash)
+                if adopted:
+                    return adopted
+                raise DownloadProviderError("This download already exists") from exc
+
+            try:
+                direct_hash = self._hash_from_add_result(result)
+            except DownloadProviderError:
+                # A rejection ("Fails.") on a torrent already present is a
+                # duplicate — adopt it; otherwise it's a real failure, re-raise.
+                adopted = self._adopt_existing(known_hash)
+                if adopted:
+                    return adopted
+                raise
             if direct_hash:
                 return direct_hash
 
