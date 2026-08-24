@@ -101,6 +101,31 @@ class QBittorrentProvider(DownloadProvider):
             return None
         return int(eta)
 
+    @staticmethod
+    def _hash_from_add_result(result: Any) -> str | None:
+        """Interpret torrents_add's return value across qBittorrent versions.
+
+        - qBittorrent 4.x returns the plain string "Ok." on success (or
+          "Fails." on failure).
+        - qBittorrent 5.x returns a TorrentsAddedMetadata mapping with
+          success_count / failure_count / added_torrent_ids.
+
+        Returns the added torrent's hash when the structured response gives it
+        directly, or None to fall back to hash discovery. Raises
+        DownloadProviderError only when the add clearly failed.
+        """
+        if isinstance(result, str):
+            if result.strip().lower() != "ok.":
+                raise DownloadProviderError(f"qBittorrent rejected the download: {result}")
+            return None
+
+        added_ids = list(getattr(result, "added_torrent_ids", None) or [])
+        success_count = int(getattr(result, "success_count", 0) or 0)
+        failure_count = int(getattr(result, "failure_count", 0) or 0)
+        if not added_ids and success_count < 1 and failure_count > 0:
+            raise DownloadProviderError(f"qBittorrent rejected the download: {result}")
+        return str(added_ids[0]) if added_ids else None
+
     async def add(self, source: str, save_path: str) -> str:
         def _add() -> str:
             known_hash = extract_magnet_hash(source)
@@ -111,8 +136,9 @@ class QBittorrentProvider(DownloadProvider):
                 tags=self._tag,
                 use_auto_torrent_management=False,
             )
-            if result and result != "Ok.":
-                raise DownloadProviderError(f"qBittorrent rejected the download: {result}")
+            direct_hash = self._hash_from_add_result(result)
+            if direct_hash:
+                return direct_hash
 
             if known_hash:
                 for _ in range(10):
