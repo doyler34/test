@@ -1,0 +1,87 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-downloadcache}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    restart: unless-stopped
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Etc/UTC}
+      WEBUI_PORT: 8080
+    volumes:
+      - qbittorrent_config:/config
+      - downloads_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks: [internal]
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-downloadcache}
+      QBITTORRENT_HOST: qbittorrent
+      QBITTORRENT_PORT: 8080
+      STORAGE_ROOT: /data
+    volumes:
+      - downloads_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qbittorrent:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      # For API-key-authenticated clients (scripts, other applications) that
+      # can't go through the dashboard's cookie-oriented rewrite proxy. Put a
+      # reverse proxy + TLS in front of this in production (see docs/DEPLOYMENT.md).
+      - "${API_PORT:-8000}:8000"
+    networks: [internal, web]
+
+  dashboard:
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://api:8000
+    ports:
+      - "${DASHBOARD_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [web]
+
+networks:
+  # api<->postgres/qbittorrent traffic never needs to leave this network;
+  # only the dashboard's port is published to the host.
+  internal:
+  web:
+
+volumes:
+  postgres_data:
+  qbittorrent_config:
+  downloads_data:
