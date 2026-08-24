@@ -8,11 +8,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AdminUser, DbSession, get_provider, get_storage
 from app.db.base import utcnow
+from app.models.audit_log import AuditLog
 from app.models.job import Job, JobStatus
 from app.models.session import Session as SessionModel
+from app.models.system_event import SystemEvent
 from app.providers.download.base import DownloadProvider
 from app.providers.storage.local import LocalStorageProvider
-from app.schemas.system import ComponentStatus, SystemMetrics, SystemStatus
+from app.schemas.system import (
+    AuditLogRead,
+    ComponentStatus,
+    SystemEventRead,
+    SystemMetrics,
+    SystemStatus,
+)
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -121,3 +129,21 @@ async def system_status(
 @router.get("/metrics", response_model=SystemMetrics)
 async def system_metrics(_: AdminUser, request: Request, session: DbSession) -> SystemMetrics:
     return await collect_system_metrics(session, request.app.state)
+
+
+@router.get("/events", response_model=list[SystemEventRead])
+async def list_system_events(
+    _: AdminUser, session: DbSession, limit: int = 50
+) -> list[SystemEvent]:
+    result = await session.execute(
+        select(SystemEvent).order_by(SystemEvent.created_at.desc()).limit(min(limit, 200))
+    )
+    return list(result.scalars().all())
+
+
+@router.get("/audit-logs", response_model=list[AuditLogRead])
+async def list_audit_logs(_: AdminUser, session: DbSession, limit: int = 50) -> list[AuditLog]:
+    result = await session.execute(
+        select(AuditLog).order_by(AuditLog.created_at.desc()).limit(min(limit, 200))
+    )
+    return list(result.scalars().all())

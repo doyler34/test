@@ -12,7 +12,9 @@ const config = {
     // (instead of calling the FastAPI backend directly from the browser)
     // keeps auth cookies same-origin — no CORS, no SameSite=None/HTTPS
     // requirement for local or single-VPS deployments.
-    return [{ source: '/api/:path*', destination: `${apiInternalUrl}/api/:path*` }];
+    return [
+      { source: '/api/:path*', destination: `${apiInternalUrl}/api/:path*` },
+    ];
   },
 };
 

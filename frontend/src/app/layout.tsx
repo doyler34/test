@@ -37,8 +37,7 @@ export default function RootLayout({
         className={cn(
           'min-h-screen overflow-x-hidden bg-background font-sans antialiased',
           fontSans.variable,
-        )}
-      >
+        )}>
         <Providers>{children}</Providers>
       </body>
     </html>
