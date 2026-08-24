@@ -59,7 +59,11 @@ class JobService:
         job.external_id = external_id
         job.save_path = save_path_relative
         await self._session.commit()
-        await self._session.refresh(job)
+        # A brand-new job has no files yet, but flush() gave it a persistent
+        # identity, so accessing `.files` unawaited (e.g. during response
+        # serialization) would trigger a lazy load outside the async
+        # greenlet context. Load it explicitly here instead.
+        await self._session.refresh(job, attribute_names=["files"])
         return job
 
     async def get_job(self, job_id: uuid.UUID) -> Job | None:
@@ -86,7 +90,6 @@ class JobService:
             await self._provider.pause(job.external_id)
         job.status = JobStatus.PAUSED
         await self._session.commit()
-        await self._session.refresh(job)
         return job
 
     async def resume(self, job: Job) -> Job:
@@ -96,7 +99,6 @@ class JobService:
             await self._provider.resume(job.external_id)
         job.status = JobStatus.DOWNLOADING
         await self._session.commit()
-        await self._session.refresh(job)
         return job
 
     async def cancel(self, job: Job) -> Job:
@@ -106,7 +108,6 @@ class JobService:
             await self._provider.cancel(job.external_id, delete_files=True)
         job.status = JobStatus.CANCELLED
         await self._session.commit()
-        await self._session.refresh(job)
         return job
 
     async def retry(self, job: Job) -> Job:
@@ -131,7 +132,6 @@ class JobService:
         job.started_at = None
         job.completed_at = None
         await self._session.commit()
-        await self._session.refresh(job)
         return job
 
     async def delete(self, job: Job) -> None:

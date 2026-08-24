@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -10,6 +10,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.api.routes import api_keys, auth, cache, files, jobs, stream, system, users
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
+from app.core.middleware import SecurityHeadersMiddleware
 from app.core.rate_limit import limiter
 from app.db.base import utcnow
 from app.db.session import AsyncSessionLocal, engine
@@ -109,15 +110,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    @app.middleware("http")
-    async def security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Referrer-Policy"] = "no-referrer"
-        if settings.cookie_secure:
-            response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
-        return response
+    app.add_middleware(SecurityHeadersMiddleware, hsts=settings.cookie_secure)
 
     app.include_router(auth.router)
     app.include_router(users.router)
