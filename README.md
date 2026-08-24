@@ -1,67 +1,48 @@
-# MovieWeb Kickstart Project
+# Download/Cache Platform
 
-A launching point for building a movie streaming website.
+A self-hosted private download and cache platform for a small group of
+authorised users. It wraps [qBittorrent](https://github.com/qbittorrent/qBittorrent)
+behind a REST API, tracks jobs and cached files in PostgreSQL, evicts old
+files automatically once storage fills up, and serves everything through an
+authenticated, range-request-capable file API — with a Next.js dashboard on
+top.
 
-## Features
+## Architecture
 
-- **Browse Movies**: Explore a vast collection of movies sorted by genre, release date, or popularity.
-- **Search Functionality**: Easily find movies by title, director, or cast.
-- **User Reviews**: Read and write reviews to share your thoughts and opinions about movies.
-- **User Ratings**: Rate movies and see the average ratings provided by the community.
-- **Recommendation Engine**: Get personalized movie recommendations based on your preferences and viewing history.
-- **Responsive Design**: Enjoy a seamless experience across devices with our responsive web design.
+```
+Next.js dashboard  →  FastAPI API  →  PostgreSQL
+                              │
+                              ├─ DownloadProvider  → qBittorrent (Web API)
+                              ├─ StorageProvider    → local disk (persistent volume)
+                              ├─ CacheProvider       → eviction policy over DB metadata
+                              └─ StreamProvider      → authenticated range-request file serving
+```
 
-## Deployments
-### Deploy with Vercel
-1. Click the button below to deploy the project on Vercel.
+The API never talks to qBittorrent, the filesystem, or the cache directly —
+everything goes through a small provider interface (`backend/app/providers/`)
+so a second download engine, an object-storage backend, or a CDN can be
+added later without touching job/cache logic.
 
-- [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fbitfreee%2Fmovie-web-kickstart&env=NEXT_PUBLIC_APP_URL,NEXT_PUBLIC_TMDB_TOKEN,NEXT_PUBLIC_SITE_NAME) 
-2. Fill in the required environment variables:
-- `NEXT_PUBLIC_APP_URL`: The URL of your deployed project (e.g., `https://movie-web-kickstart.vercel.app`)
-- `NEXT_PUBLIC_TMDB_TOKEN`: Your TMDb API key (get it [here](https://www.themoviedb.org/documentation/api), or you can use default token in .env.example file for testing)
-- `NEXT_PUBLIC_SITE_NAME`: The name of your website (e.g., `MovieWeb Kickstart`)
+## Repository layout
 
-3. Click "Deploy" and wait for the deployment to complete.
+```
+backend/    FastAPI + SQLAlchemy + Alembic + PostgreSQL — see backend/README.md
+frontend/   Next.js + TypeScript dashboard — see frontend/README.md
+docs/       Deployment and operational docs
+docker-compose.yml
+.env.example
+```
 
-### Deploy with Cloudflare Pages
-To deploy on [Cloudflare Pages](https://pages.cloudflare.com/) you can use the following instructions:
-[README](https://github.com/cloudflare/next-on-pages/tree/main/packages/next-on-pages)
+## Quick start
 
-## Local Development
+```bash
+cp .env.example .env   # edit secrets, storage paths, cache limits
+docker compose up -d --build
+```
 
-1. Clone the repository: `git clone https://github.com/bitfreee/movie-web-kickstart`
-2. Navigate to the project directory: `cd movie-web-kickstart`
-3. Install dependencies: `npm install`
-4. Create .env file `cp .env.example .env`
-4. Start the development server: `npm run dev`
+See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the full deployment guide,
+environment variable reference, and operational notes (backups, recovery,
+reverse proxy/TLS).
 
-## Tech Stack
-
-- [Next.js](https://nextjs.org/) – framework
-- [TypeScript](https://www.typescriptlang.org/) – language
-- [Tailwind](https://tailwindcss.com/) – CSS
-- [Vercel](https://vercel.com/) – deployments
-- [TMDb](https://www.themoviedb.org/) - movie database
-- [Vidsrc.cc](https://vidsrc.cc) - streaming links
-
-## Contributing
-
-Contributions are welcome! If you'd like to contribute to this project, please follow these steps:
-
-1. Fork the repository.
-2. Create a new branch (`git checkout -b feature/improvement`).
-3. Make your changes.
-4. Commit your changes (`git commit -am 'Add new feature'`).
-5. Push to the branch (`git push origin feature/improvement`).
-6. Create a new Pull Request.
-
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-## Acknowledgements
-
-- The Movie Database (TMDb) for providing the movie data through their API.
-- [Vidsrc.cc](https://vidsrc.cc) for providing the movie streaming links.
----
-
+For local development without Docker, see `backend/README.md` and
+`frontend/README.md`.
